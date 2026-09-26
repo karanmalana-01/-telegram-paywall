@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Join the Group</title>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --text: #f2f2f2;
+    --muted: #9aa0a6;
+    --accent: #4f8cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 24px;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p.desc { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+  .price { font-size: 36px; font-weight: 700; margin: 12px 0 24px; }
+  button {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .status { margin-top: 16px; font-size: 14px; color: var(--muted); min-height: 20px; }
+  .join-btn {
+    display: none;
+    margin-top: 16px;
+    background: #27c281;
+    text-decoration: none;
+    color: white;
+    padding: 14px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Premium Telegram Group</h1>
+    <p class="desc">One-time payment. You'll get an instant, single-use invite link right after payment is confirmed.</p>
+    <div class="price" id="price">₹—</div>
+    <button id="payBtn">Pay Now</button>
+    <div class="status" id="status"></div>
+    <a class="join-btn" id="joinBtn" target="_blank" rel="noopener">Join Telegram Group →</a>
+  </div>
+
+<script>
+const payBtn = document.getElementById('payBtn');
+const statusEl = document.getElementById('status');
+const joinBtn = document.getElementById('joinBtn');
+const priceEl = document.getElementById('price');
+
+async function createOrder() {
+  const res = await fetch('/create-order', { method: 'POST' });
+  if (!res.ok) throw new Error('order creation failed');
+  return res.json();
+}
+
+async function verifyPayment(payload) {
+  const res = await fetch('/verify-payment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error('verification failed');
+  return res.json();
+}
+
+// Poll order status as a fallback in case the webhook confirms payment
+// slightly after the client-side verify call (e.g. slow network).
+async function pollUntilPaid(orderId, attempts = 10) {
+  for (let i = 0; i < attempts; i++) {
+    const res = await fetch(`/order-status?orderId=${orderId}`);
+    const data = await res.json();
+    if (data.status === 'paid' && data.inviteLink) return data.inviteLink;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  throw new Error('Payment confirmation is taking longer than expected.');
+}
+
+payBtn.addEventListener('click', async () => {
+  payBtn.disabled = true;
+  statusEl.textContent = 'Creating order...';
+
+  let order;
+  try {
+    order = await createOrder();
+    priceEl.textContent = '₹' + (order.amount / 100);
+  } catch (e) {
+    statusEl.textContent = 'Could not start payment. Please try again.';
+    payBtn.disabled = false;
+    return;
+  }
+
+  const rzp = new Razorpay({
+    key: order.keyId,
+    amount: order.amount,
+    currency: 'INR',
+    name: 'Premium Telegram Group',
+    order_id: order.orderId,
+    handler: async function (response) {
+      statusEl.textContent = 'Payment received, confirming...';
+      try {
+        const result = await verifyPayment(response);
+        showJoinLink(result.inviteLink);
+      } catch (e) {
+        // Client-side check failed or was interrupted — fall back to
+        // polling, since the webhook may still confirm the payment.
+        statusEl.textContent = 'Confirming with payment provider...';
+        try {
+          const inviteLink = await pollUntilPaid(order.orderId);
+          showJoinLink(inviteLink);
+        } catch (e2) {
+          statusEl.textContent = 'Payment received but confirmation is delayed. Contact support with your payment ID.';
+        }
+      }
+    },
+    modal: {
+      ondismiss: function () {
+        statusEl.textContent = 'Payment cancelled.';
+        payBtn.disabled = false;
+      }
+    },
+    theme: { color: '#4f8cff' }
+  });
+
+  rzp.open();
+});
+
+function showJoinLink(inviteLink) {
+  statusEl.textContent = 'Payment confirmed!';
+  joinBtn.href = inviteLink;
+  joinBtn.style.display = 'block';
+  payBtn.style.display = 'none';
+  // Auto-redirect too, in case the user doesn't notice the button.
+  setTimeout(() => { window.location.href = inviteLink; }, 1200);
+}
+</script>
+</body>
+</html>
