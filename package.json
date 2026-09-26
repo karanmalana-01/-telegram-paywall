@@ -1,0 +1,17 @@
+{
+  "name": "telegram-paywall",
+  "version": "1.0.0",
+  "description": "Website that sells access to a Telegram group via Razorpay, with server-verified payment confirmation.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "razorpay": "^2.9.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
